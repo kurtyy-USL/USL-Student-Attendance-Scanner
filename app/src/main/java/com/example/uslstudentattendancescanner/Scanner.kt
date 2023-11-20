@@ -18,6 +18,9 @@ import com.google.android.gms.vision.Detector
 import com.google.android.gms.vision.barcode.Barcode
 import com.google.android.gms.vision.barcode.BarcodeDetector
 import com.google.android.gms.vision.Detector.Detections
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 class Scanner : AppCompatActivity() {
     private val requestCodeCameraPermission = 1001
@@ -25,6 +28,9 @@ class Scanner : AppCompatActivity() {
     private lateinit var barcodeDetector: BarcodeDetector
     private var scannedValue = ""
     private lateinit var binding: ActivityScannerBinding
+    private var lastScanTime: Long = 0
+    var scanCounter = 0
+    val databaseManager = DatabaseManager(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,14 +60,14 @@ class Scanner : AppCompatActivity() {
 
         cameraSource = CameraSource.Builder(this, barcodeDetector)
             .setRequestedPreviewSize(1920, 1080)
-            .setAutoFocusEnabled(true) //you should add this feature
+            .setAutoFocusEnabled(true) // you should add this feature
             .build()
 
-        binding.cameraSurfaceView.getHolder().addCallback(object : SurfaceHolder.Callback {
+        binding.cameraSurfaceView.holder.addCallback(object : SurfaceHolder.Callback {
             @SuppressLint("MissingPermission")
             override fun surfaceCreated(holder: SurfaceHolder) {
                 try {
-                    //Start preview after 1s delay
+                    // Start preview after 1s delay
                     cameraSource.start(holder)
                 } catch (e: IOException) {
                     e.printStackTrace()
@@ -87,7 +93,6 @@ class Scanner : AppCompatActivity() {
             }
         })
 
-
         barcodeDetector.setProcessor(object : Detector.Processor<Barcode> {
             override fun release() {
                 Toast.makeText(applicationContext, "Scanner has been closed", Toast.LENGTH_SHORT)
@@ -95,21 +100,44 @@ class Scanner : AppCompatActivity() {
             }
 
             override fun receiveDetections(detections: Detections<Barcode>) {
-                val barcodes = detections.detectedItems
-                if (barcodes.size() == 1) {
-                    scannedValue = barcodes.valueAt(0).rawValue
+                val currentTime = System.currentTimeMillis()
+                if (currentTime > lastScanTime) {
+                    val barcodes = detections.detectedItems
+                    if (barcodes.size() == 1) {
+                        scannedValue = barcodes.valueAt(0).rawValue
+                        // Don't forget to add this line printing value or finishing activity must run on the main thread
+                        runOnUiThread {
+                            scanCounter = scanCounter + 1
+                            Toast.makeText(
+                                this@Scanner,
+                                "Scan Count: $scanCounter \nvalue- $scannedValue",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            val parts = scannedValue.split('\n')
+                            // Assign the parts to variables
+                            val studentId = parts[0]
+                            var studentName = " "
+                            var studentProgram = " "
+                            var studentYear = " "
 
-
-                    //Don't forget to add this line printing value or finishing activity must run on main thread
-                    runOnUiThread {
-                        cameraSource.stop()
-                        Toast.makeText(this@Scanner, "value- $scannedValue", Toast.LENGTH_LONG).show()
-//                        finish()
+                            try {
+                                studentName = parts[1]
+                                studentProgram = parts[2]
+                                studentYear = parts[3]
+                            } catch (error: Error) {
+                            }
+                            databaseManager.open()
+                            databaseManager.insertData(
+                                studentId,
+                                studentName,
+                                studentProgram,
+                                studentYear,
+                                getCurrentDate(),
+                                getCurrentTime()
+                            )
+                        }
+                        lastScanTime = currentTime + 3000
                     }
-                }else
-                {
-                    Toast.makeText(this@Scanner, "value- else", Toast.LENGTH_SHORT).show()
-
                 }
             }
         })
@@ -141,5 +169,17 @@ class Scanner : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraSource.stop()
+    }
+
+    fun getCurrentDate(): String {
+        val currentDate = LocalDate.now()
+        val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        return currentDate.format(dateFormatter)
+    }
+
+    fun getCurrentTime(): String {
+        val currentTime = LocalTime.now()
+        val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+        return currentTime.format(timeFormatter)
     }
 }
